@@ -207,9 +207,23 @@ public partial class ViewerControl
 
         using (c.PushClip(DrawingArea))
         {
-            OnDrawCheckerboard(c);      // draw checkerboard
-            OnDrawImage(c);             // draw image
-            OnDrawSelection(c);         // draw selection
+            if (EnableSelection && !SourceSelection.IsEmpty && Math.Abs(SelectionAngle) >= 1e-4)
+            {
+                var pivotClient = PointSourceToClient(SelectionRotationPivot);
+                var rotMatrix = Matrix.CreateRotation(SelectionAngle * Math.PI / 180.0, pivotClient);
+                using (c.PushTransform(rotMatrix))
+                {
+                    OnDrawCheckerboard(c);  // draw rotated checkerboard
+                    OnDrawImage(c);         // draw rotated image behind upright crop box
+                }
+            }
+            else
+            {
+                OnDrawCheckerboard(c);      // draw checkerboard
+                OnDrawImage(c);             // draw image
+            }
+
+            OnDrawSelection(c);         // draw upright Photoshop-style selection
         }
 
         OnDrawDebugInfo(c);         // draw debug info

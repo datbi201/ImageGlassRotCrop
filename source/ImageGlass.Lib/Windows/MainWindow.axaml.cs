@@ -42,6 +42,7 @@ public partial class MainWindow : PhWindow
 {
     private readonly AppStatusInfo _status;
     private bool _isClosingHandled; // to handle closing for saving configs
+    private bool _isPromptingSaveOnClose;
 
     private const double DEFAULT_WIDTH = 800;
     private const double DEFAULT_HEIGHT = 500;
@@ -144,6 +145,53 @@ public partial class MainWindow : PhWindow
 
         // cancel the close so async work can complete before the app tears down
         e.Cancel = true;
+
+        // guard against re-entrant close clicks while save confirmation is open
+        if (_isPromptingSaveOnClose) return;
+
+        // prompt to save if user has unsaved image edits (flip, rotate, invert, crop, or rotated crop selection)
+        var hasUnsavedEdits = Core.ImageTransform.HasChanges
+            || Core.ClipboardImage is not null
+            || (PART_MainView.PART_Viewer.EnableSelection
+                && PART_MainView.PART_Viewer.SourceSelection.Width > 0 && PART_MainView.PART_Viewer.SourceSelection.Height > 0
+                && Math.Abs(PART_MainView.PART_Viewer.SelectionAngle) >= 1e-4);
+
+        if (hasUnsavedEdits)
+        {
+            _isPromptingSaveOnClose = true;
+            try
+            {
+                var answer = await ModalWindow.ShowWarningAsync(this, new ModalWindowOptions
+                {
+                    Title = BHelper.AppDisplayName,
+                    Heading = "Save changes before closing?",
+                    Description = "You have unsaved image edits (crop, flip, or rotation). Do you want to save before closing? Press Esc or click X to cancel.",
+                }, ModalWindowButton.Yes_No);
+
+                if (answer.ExitCode == DialogExitCode.OK)
+                {
+                    await Core.API!.RunApiAsync(API.IG_Save);
+                    if (Photo.PendingSaveCount > 0)
+                    {
+                        await Photo.WaitForPendingSavesAsync(TimeSpan.FromMinutes(2));
+                    }
+
+                    // if the user canceled the Save/Save As dialog, keep the window open
+                    var stillUnsaved = Core.ImageTransform.HasChanges || Core.ClipboardImage is not null;
+                    if (stillUnsaved) return;
+                }
+                else if (answer.ExitCode != DialogExitCode.Cancel)
+                {
+                    // user clicked X or pressed Esc -> abort closing
+                    return;
+                }
+            }
+            finally
+            {
+                _isPromptingSaveOnClose = false;
+            }
+        }
+
         _isClosingHandled = true;
 
         // let a save the user just triggered finish writing before anything is torn down

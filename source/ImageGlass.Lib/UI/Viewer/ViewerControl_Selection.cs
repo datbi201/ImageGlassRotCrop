@@ -1,4 +1,4 @@
-﻿/*
+/*
 ImageGlass - A Fast, Seamless Photo Viewer
 Copyright (C) 2010 - 2027 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
@@ -35,7 +35,7 @@ public partial class ViewerControl
 
 
     /// <summary>
-    /// Occurs when the <see cref="ClientSelection"/> is changed.
+    /// Occurs when the <see cref="ClientSelection"/> or <see cref="SelectionAngle"/> is changed.
     /// </summary>
     public event TEventHandler<ViewerControl, ViewerSelectionChangedEventArgs>? SelectionChanged;
 
@@ -44,7 +44,7 @@ public partial class ViewerControl
     #region Public Properties
 
     /// <summary>
-    /// Gets the client selection area.
+    /// Gets the upright client selection area (Photoshop-style fixed crop window).
     /// </summary>
     public Rect ClientSelection => RectSourceToClient(_selection.SourceRect);
 
@@ -58,6 +58,22 @@ public partial class ViewerControl
         get => _selection.SourceRect;
         set => SetSourceSelection(value, true);
     }
+
+
+    /// <summary>
+    /// Gets, sets the clockwise rotation angle (in degrees, [-180, 180]) of the image behind the upright crop frame.
+    /// </summary>
+    public double SelectionAngle
+    {
+        get => _selection.Angle;
+        set => SetSelectionAngle(value, true);
+    }
+
+
+    /// <summary>
+    /// Gets the fixed source-pixel pivot point around which the image rotates during cropping.
+    /// </summary>
+    public Point SelectionRotationPivot => _selection.RotationPivotSource ?? _selection.SourceRect.Center;
 
 
     /// <summary>
@@ -91,7 +107,7 @@ public partial class ViewerControl
 
 
     /// <summary>
-    /// Gets 8 resizers of the selection rectangle
+    /// Gets 8 resizers plus 4 Photoshop-style outer-corner rotation zones of the selection rectangle.
     /// </summary>
     public List<SelectionResizer> SelectionResizers
     {
@@ -99,111 +115,61 @@ public partial class ViewerControl
         {
             if (SourceSelection.IsEmpty) return [];
 
-            var resizerSize = DpiScale(7f);
-            var resizerMargin = DpiScale(1f);
-            var hitSize = DpiScale(resizerSize * 1.3f);
+            var resizerSize = DpiScale(12f);
+            var hitSize = DpiScale(16f);
+            var halfHit = hitSize / 2;
+            var rotateZone = DpiScale(28f);
 
+            // 4 corner resize handles
+            var topLeft = new Rect(ClientSelection.X, ClientSelection.Y, resizerSize, resizerSize);
+            var topLeftHit = new Rect(ClientSelection.X - halfHit, ClientSelection.Y - halfHit, hitSize, hitSize);
 
-            // top left
-            var topLeft = new Rect(
-                ClientSelection.X + resizerMargin,
-                ClientSelection.Y + resizerMargin,
-                resizerSize, resizerSize);
-            var topLeftHit = new Rect(
-                ClientSelection.X - hitSize / 2 + resizerSize / 2,
-                ClientSelection.Y - hitSize / 2 + resizerSize / 2,
-                hitSize, hitSize);
+            var topRight = new Rect(ClientSelection.Right - resizerSize, ClientSelection.Y, resizerSize, resizerSize);
+            var topRightHit = new Rect(ClientSelection.Right - halfHit, ClientSelection.Y - halfHit, hitSize, hitSize);
 
+            var bottomLeft = new Rect(ClientSelection.X, ClientSelection.Bottom - resizerSize, resizerSize, resizerSize);
+            var bottomLeftHit = new Rect(ClientSelection.X - halfHit, ClientSelection.Bottom - halfHit, hitSize, hitSize);
 
-            // top right
-            var topRight = new Rect(
-                ClientSelection.Right - resizerSize - resizerMargin,
-                ClientSelection.Y + resizerMargin,
-                resizerSize, resizerSize);
-            var topRightHit = new Rect(
-                ClientSelection.Right - hitSize / 2 - resizerSize / 2,
-                ClientSelection.Y - hitSize / 2 + resizerSize / 2,
-                hitSize, hitSize);
+            var bottomRight = new Rect(ClientSelection.Right - resizerSize, ClientSelection.Bottom - resizerSize, resizerSize, resizerSize);
+            var bottomRightHit = new Rect(ClientSelection.Right - halfHit, ClientSelection.Bottom - halfHit, hitSize, hitSize);
 
+            // 4 edge resize handles
+            var top = new Rect(ClientSelection.X + ClientSelection.Width / 2 - resizerSize / 2, ClientSelection.Y, resizerSize, resizerSize);
+            var topHit = new Rect(topLeftHit.Right, ClientSelection.Y - halfHit, Math.Max(0, topRightHit.X - topLeftHit.Right), hitSize);
 
-            // bottom left
-            var bottomLeft = new Rect(
-                ClientSelection.X + resizerMargin,
-                ClientSelection.Bottom - resizerSize - resizerMargin,
-                resizerSize, resizerSize);
-            var bottomLeftHit = new Rect(
-                ClientSelection.X - hitSize / 2 + resizerSize / 2,
-                ClientSelection.Bottom - hitSize / 2 - resizerSize / 2,
-                hitSize, hitSize);
+            var right = new Rect(ClientSelection.Right - resizerSize, ClientSelection.Y + ClientSelection.Height / 2 - resizerSize / 2, resizerSize, resizerSize);
+            var rightHit = new Rect(ClientSelection.Right - halfHit, topRightHit.Bottom, hitSize, Math.Max(0, bottomRightHit.Y - topRightHit.Bottom));
 
+            var bottom = new Rect(ClientSelection.X + ClientSelection.Width / 2 - resizerSize / 2, ClientSelection.Bottom - resizerSize, resizerSize, resizerSize);
+            var bottomHit = new Rect(bottomLeftHit.Right, ClientSelection.Bottom - halfHit, Math.Max(0, bottomRightHit.X - bottomLeftHit.Right), hitSize);
 
-            // bottom right
-            var bottomRight = new Rect(
-                ClientSelection.Right - resizerSize - resizerMargin,
-                ClientSelection.Bottom - resizerSize - resizerMargin,
-                resizerSize, resizerSize);
-            var bottomRightHit = new Rect(
-                ClientSelection.Right - hitSize / 2 - resizerSize / 2,
-                ClientSelection.Bottom - hitSize / 2 - resizerSize / 2,
-                hitSize, hitSize);
+            var left = new Rect(ClientSelection.X, ClientSelection.Y + ClientSelection.Height / 2 - resizerSize / 2, resizerSize, resizerSize);
+            var leftHit = new Rect(ClientSelection.X - halfHit, topLeftHit.Bottom, hitSize, Math.Max(0, bottomLeftHit.Y - topLeftHit.Bottom));
 
+            // 4 Photoshop-style outer-corner rotation hit zones (outside each corner, after resize handles in priority)
+            var rotTL = new Rect(ClientSelection.Left - rotateZone, ClientSelection.Top - rotateZone, rotateZone, rotateZone);
+            var rotTR = new Rect(ClientSelection.Right, ClientSelection.Top - rotateZone, rotateZone, rotateZone);
+            var rotBR = new Rect(ClientSelection.Right, ClientSelection.Bottom, rotateZone, rotateZone);
+            var rotBL = new Rect(ClientSelection.Left - rotateZone, ClientSelection.Bottom, rotateZone, rotateZone);
 
-            // top
-            var top = new Rect(
-                ClientSelection.X + ClientSelection.Width / 2 - resizerSize / 2,
-                ClientSelection.Y + resizerMargin,
-                resizerSize, resizerSize);
-            var topHit = new Rect(
-                topLeftHit.Right,
-                ClientSelection.Y - hitSize / 2 + resizerSize / 2,
-                Math.Abs(topRightHit.X - topLeftHit.Right), hitSize);
-
-
-            // right
-            var right = new Rect(
-                    ClientSelection.Right - resizerSize - resizerMargin,
-                    ClientSelection.Y + ClientSelection.Height / 2 - resizerSize / 2,
-                    resizerSize, resizerSize);
-            var rightHit = new Rect(
-                    ClientSelection.Right - hitSize / 2 - resizerSize / 2,
-                    topRightHit.Bottom,
-                    hitSize, Math.Abs(bottomRightHit.Y - topRightHit.Bottom));
-
-
-            // bottom
-            var bottom = new Rect(
-                    ClientSelection.X + ClientSelection.Width / 2 - resizerSize / 2,
-                    ClientSelection.Bottom - resizerSize - resizerMargin,
-                    resizerSize, resizerSize);
-            var bottomHit = new Rect(
-                    bottomLeftHit.Right,
-                    ClientSelection.Bottom - hitSize / 2 - resizerSize / 2,
-                    Math.Abs(bottomRightHit.X - bottomLeftHit.Right), hitSize);
-
-
-            // left
-            var left = new Rect(
-                    ClientSelection.X + resizerMargin,
-                    ClientSelection.Y + ClientSelection.Height / 2 - resizerSize / 2,
-                    resizerSize, resizerSize);
-            var leftHit = new Rect(
-                    ClientSelection.X - hitSize / 2 + resizerSize / 2,
-                    topLeftHit.Bottom,
-                    hitSize, Math.Abs(bottomLeftHit.Y - topLeftHit.Bottom));
-
-
-            // 8 resizers
             return [
-                // bottom-right is in higher layer
+                // 4 corners (highest priority)
                 new(SelectionResizerType.BottomRight, bottomRight, bottomRightHit),
                 new(SelectionResizerType.TopLeft, topLeft, topLeftHit),
                 new(SelectionResizerType.BottomLeft, bottomLeft, bottomLeftHit),
                 new(SelectionResizerType.TopRight, topRight, topRightHit),
 
+                // 4 edges
                 new(SelectionResizerType.Right, right, rightHit),
                 new(SelectionResizerType.Bottom, bottom, bottomHit),
                 new(SelectionResizerType.Left, left, leftHit),
                 new(SelectionResizerType.Top, top, topHit),
+
+                // 4 outer-corner rotation zones (Photoshop UX)
+                new(SelectionResizerType.Rotate, rotTL, rotTL),
+                new(SelectionResizerType.Rotate, rotTR, rotTR),
+                new(SelectionResizerType.Rotate, rotBR, rotBR),
+                new(SelectionResizerType.Rotate, rotBL, rotBL),
             ];
         }
     }
@@ -220,14 +186,62 @@ public partial class ViewerControl
     /// </summary>
     public void SetSourceSelection(Rect srcRect, bool triggerEvent = true)
     {
-        // use integer numbers for pixel rounding
         var w = (int)BitmapSize.Width;
         var h = (int)BitmapSize.Height;
-        _selection.SourceRect = srcRect.GetIntersection(new Rect(0, 0, w, h));
+
+        if (srcRect.Width <= 0 || srcRect.Height <= 0 || w <= 0 || h <= 0)
+        {
+            _selection.SourceRect = default;
+            _selection.Angle = 0;
+            _selection.RotationPivotSource = null;
+        }
+        else if (Math.Abs(_selection.Angle) < 1e-4)
+        {
+            _selection.SourceRect = srcRect.GetIntersection(new Rect(0, 0, w, h));
+        }
+        else
+        {
+            // When the image is rotated behind the crop box, allow the upright crop frame
+            // to reach rotated corners smoothly without shrinking unexpectedly.
+            var norm = srcRect.Normalize();
+            var rw = Math.Max(1, Math.Round(norm.Width));
+            var rh = Math.Max(1, Math.Round(norm.Height));
+            _selection.SourceRect = new Rect(
+                Math.Round(norm.X),
+                Math.Round(norm.Y),
+                rw,
+                rh);
+        }
 
         if (triggerEvent)
         {
-            SelectionChanged?.Invoke(this, new ViewerSelectionChangedEventArgs(ClientSelection, SourceSelection));
+            SelectionChanged?.Invoke(this, new ViewerSelectionChangedEventArgs(ClientSelection, SourceSelection, SelectionAngle));
+        }
+    }
+
+
+    /// <summary>
+    /// Sets the clockwise rotation angle (in degrees) of the image behind the upright crop frame.
+    /// </summary>
+    public void SetSelectionAngle(double angleDegrees, bool triggerEvent = true)
+    {
+        var normalized = NormalizeAngle(angleDegrees);
+        if (Math.Abs(normalized) < 1e-4)
+        {
+            normalized = 0;
+            _selection.RotationPivotSource = null;
+        }
+        else if (_selection.RotationPivotSource is null && !SourceSelection.IsEmpty)
+        {
+            // Lock pivot to the crop center once rotation starts so subsequent resizes never shift the image
+            _selection.RotationPivotSource = _selection.SourceRect.Center;
+        }
+
+        _selection.Angle = normalized;
+
+        if (triggerEvent)
+        {
+            SelectionChanged?.Invoke(this, new ViewerSelectionChangedEventArgs(ClientSelection, SourceSelection, SelectionAngle));
         }
     }
 
@@ -325,6 +339,16 @@ public partial class ViewerControl
     #region Private Functions
 
     /// <summary>
+    /// Normalizes an angle in degrees into the range [-180, 180].
+    /// </summary>
+    private static double NormalizeAngle(double angleDegrees)
+    {
+        var a = ((angleDegrees + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
+        return a == -180.0 && angleDegrees > 0 ? 180.0 : a;
+    }
+
+
+    /// <summary>
     /// Initializes the selection logics when <see cref="OnPointerPressed"/> event occurs.
     /// </summary>
     private bool OnSelectionBegin(PointerPoint p)
@@ -341,7 +365,7 @@ public partial class ViewerControl
         var requestRerender = canSelect && !SourceSelection.IsEmpty;
 
 
-        // get the selected resizer
+        // get the selected resizer (8 resize handles first, then 4 outer-corner rotate zones)
         _selection.SelectedResizer = SelectionResizers.Find(i => i.HitRegion.Contains(p.Position));
         CurrentSelectionAction = SelectionAction.None;
 
@@ -350,8 +374,20 @@ public partial class ViewerControl
         {
             _selection.SourceRectBeforeMoved = new Rect(_selection.SourceRect.Position, _selection.SourceRect.Size);
 
+            // rotate image behind upright crop box (Photoshop style)
+            if (_selection.SelectedResizer?.Type == SelectionResizerType.Rotate)
+            {
+                CurrentSelectionAction = SelectionAction.Rotating;
+                if (_selection.RotationPivotSource is null)
+                {
+                    _selection.RotationPivotSource = _selection.SourceRect.Center;
+                }
+                _selection.AngleBeforeRotated = _selection.Angle;
+                var pivotClient = PointSourceToClient(SelectionRotationPivot);
+                _selection.PointerDownAngle = Math.Atan2(p.Position.Y - pivotClient.Y, p.Position.X - pivotClient.X) * 180.0 / Math.PI;
+            }
             // resize selection
-            if (canSelect && _selection.SelectedResizer != null)
+            else if (_selection.SelectedResizer != null)
             {
                 CurrentSelectionAction = SelectionAction.Resizing;
             }
@@ -360,10 +396,12 @@ public partial class ViewerControl
             {
                 CurrentSelectionAction = SelectionAction.Moving;
             }
-            // draw selection
-            else if (canSelect)
+            // draw new selection (resets rotation)
+            else
             {
                 CurrentSelectionAction = SelectionAction.Drawing;
+                _selection.Angle = 0;
+                _selection.RotationPivotSource = null;
             }
         }
 
@@ -378,14 +416,19 @@ public partial class ViewerControl
     private bool OnSelectionUpdating(Point position)
     {
         var requestRerender = false;
-        var canSelect = EnableSelection && _selection.IsLeftButtonPressed;
         _selection.PointerMovePoint = position;
 
 
         if (_selection.IsLeftButtonPressed)
         {
+            // rotate image behind upright crop box
+            if (CurrentSelectionAction == SelectionAction.Rotating)
+            {
+                RotateSelection(position);
+                requestRerender = true;
+            }
             // resize the selection
-            if (CurrentSelectionAction == SelectionAction.Resizing && _selection.SelectedResizer != null)
+            else if (CurrentSelectionAction == SelectionAction.Resizing && _selection.SelectedResizer != null)
             {
                 ResizeSelection(position, _selection.SelectedResizer.Type);
                 requestRerender = true;
@@ -408,10 +451,14 @@ public partial class ViewerControl
         // change cursor
         if (EnableSelection)
         {
-            // set resizer cursor
             var hoveredResizer = SelectionResizers.Find(i => i.HitRegion.Contains(position));
 
-            if (hoveredResizer != null)
+            if (CurrentSelectionAction == SelectionAction.Rotating || hoveredResizer?.Type == SelectionResizerType.Rotate)
+            {
+                Cursor = new Cursor(StandardCursorType.Hand);
+                requestRerender = true; // keep curved rotate arrow following pointer smoothly
+            }
+            else if (hoveredResizer != null)
             {
                 Cursor = hoveredResizer.GetCursor();
             }
@@ -429,7 +476,7 @@ public partial class ViewerControl
             var isSelectionHovered = ClientSelection.Contains(position);
             requestRerender = requestRerender
                 || _selection.IsHovered != isSelectionHovered
-                || _selection.HoveredResizer != hoveredResizer;
+                || _selection.HoveredResizer?.Type != hoveredResizer?.Type;
 
 
             _selection.IsHovered = isSelectionHovered;
@@ -458,27 +505,25 @@ public partial class ViewerControl
     {
         var requestRerender = false;
 
-        // if the pointer is exited
         if (isPointerExited)
         {
             _selection.IsHovered = false;
+            _selection.HoveredResizer = null;
             _selection.PointerMovePoint = null;
-
-            return requestRerender;
+            return true;
         }
 
-
-        // if the pointer is released or canceled
         var canSelect = EnableSelection && _selection.IsLeftButtonPressed;
 
         _selection.PointerDownPoint = null;
         _selection.IsLeftButtonPressed = false;
         _selection.SelectedResizer = null;
+        CurrentSelectionAction = SelectionAction.None;
 
 
         if (canSelect)
         {
-            SelectionChanged?.Invoke(this, new ViewerSelectionChangedEventArgs(ClientSelection, SourceSelection));
+            SelectionChanged?.Invoke(this, new ViewerSelectionChangedEventArgs(ClientSelection, SourceSelection, SelectionAngle));
             requestRerender = true;
         }
 
@@ -487,135 +532,223 @@ public partial class ViewerControl
 
 
     /// <summary>
-    /// Draws the selection visuals on a canvas, including selection borders, grids, and resizers
-    /// when <see cref="Render"/> occurs.
+    /// Draws the Photoshop-style upright crop frame: dimmed exterior mask, adaptive alignment grid
+    /// (9x9 straightening grid while rotating, 3x3 rule-of-thirds while resizing/moving),
+    /// crisp L-shaped corner brackets, edge handle bars, curved corner rotate arrow, and floating pill tooltip.
     /// </summary>
     private void OnDrawSelection(DrawingContext g)
     {
         if (!EnableSelection || SourceSelection.IsEmpty) return;
 
+        var sel = ClientSelection;
+        var isRotating = CurrentSelectionAction == SelectionAction.Rotating;
+        var isHoveringRotate = _selection.HoveredResizer?.Type == SelectionResizerType.Rotate;
+        var hasRotation = Math.Abs(_selection.Angle) >= 1e-4;
 
-        // 1. draw the clip selection region
-        var selectionGeo = g.GetCombinedRectGeometryEx(ClientSelection, DestRect, 0, 0, GeometryCombineMode.Xor);
-        g.DrawGeometryEx(selectionGeo, Colors.Transparent,
-            Colors.Black.WithAlpha(_selection.IsLeftButtonPressed ? 100 : 180));
+        // 1. Dimmed exterior mask covering entire DrawingArea outside the upright crop box
+        var geoOuter = new RectangleGeometry(DrawingArea);
+        var geoInner = new RectangleGeometry(sel);
+        var maskGeo = Geometry.Combine(geoOuter, geoInner, GeometryCombineMode.Exclude);
+        var maskAlpha = (byte)(isRotating ? 155 : (_selection.IsLeftButtonPressed ? 130 : 175));
+        g.DrawGeometryEx(maskGeo, Colors.Transparent, Colors.Black.WithAlpha(maskAlpha));
 
-
-        // 2. draw selection grid, resizers
-        if (_selection.IsLeftButtonPressed || _selection.IsHovered || _selection.HoveredResizer != null)
+        // 2. Adaptive alignment grid inside the upright crop frame
+        if (isRotating)
         {
-            var width3 = ClientSelection.Width / 3;
-            var height3 = ClientSelection.Height / 3;
-
-
-            // draw grid, ignore alpha value
-            for (int i = 1; i < 3; i++)
-            {
-                g.DrawLineEx(
-                    ClientSelection.X + (i * width3),
-                    ClientSelection.Y,
-                    ClientSelection.X + (i * width3),
-                    ClientSelection.Y + ClientSelection.Height, Colors.Black.WithAlpha(200),
-                    0.4f);
-                g.DrawLineEx(
-                    ClientSelection.X + (i * width3),
-                    ClientSelection.Y,
-                    ClientSelection.X + (i * width3),
-                    ClientSelection.Y + ClientSelection.Height, Colors.White.WithAlpha(200),
-                    0.4f);
-                g.DrawLineEx(
-                    ClientSelection.X + (i * width3),
-                    ClientSelection.Y,
-                    ClientSelection.X + (i * width3),
-                    ClientSelection.Y + ClientSelection.Height, Core.AccentColor.WithAlpha(200),
-                    0.4f);
-
-
-                g.DrawLineEx(
-                    ClientSelection.X,
-                    ClientSelection.Y + (i * height3),
-                    ClientSelection.X + ClientSelection.Width,
-                    ClientSelection.Y + (i * height3), Colors.Black.WithAlpha(200),
-                    0.4f);
-                g.DrawLineEx(
-                    ClientSelection.X,
-                    ClientSelection.Y + (i * height3),
-                    ClientSelection.X + ClientSelection.Width,
-                    ClientSelection.Y + (i * height3), Colors.White.WithAlpha(200),
-                    0.4f);
-                g.DrawLineEx(
-                    ClientSelection.X,
-                    ClientSelection.Y + (i * height3),
-                    ClientSelection.X + ClientSelection.Width,
-                    ClientSelection.Y + (i * height3), Core.AccentColor.WithAlpha(200),
-                    0.4f);
-            }
-
-
-            // draw selection size
-            var text = $"{_selection.SourceRect.Width} x {_selection.SourceRect.Height}";
-            var textSize = g.MeasureTextEx(text, FontFamily, FontSize * 0.95);
-            var textPadding = new Thickness(5, 2.5);
-            var textX = ClientSelection.X + (ClientSelection.Width / 2 - textSize.Width / 2);
-            var textY = ClientSelection.Y + (ClientSelection.Height / 2 - textSize.Height / 2);
-            var textBgRect = new Rect(
-                textX - textPadding.Left,
-                textY - textPadding.Top,
-                textSize.Width + textPadding.Left + textPadding.Right,
-                textSize.Height + textPadding.Top + textPadding.Bottom);
-
-            if (textBgRect.Width + 10 < ClientSelection.Width
-                && textBgRect.Height + 10 < ClientSelection.Height)
-            {
-                g.DrawRectangleEx(textBgRect, (float)textSize.Height / 5, Colors.White.WithAlpha(100), Colors.Black.WithAlpha(100));
-                g.DrawRectangleEx(textBgRect, (float)textSize.Height / 5, Core.AccentColor.WithAlpha(100), Core.AccentColor.WithAlpha(150));
-                g.DrawTextEx(text, FontFamily, FontSize * 0.95, textX, textY, Colors.White);
-            }
-
-
-            // draw resizers with layer order
-            var resizers = SelectionResizers;
-            resizers.Reverse();
-
-            foreach (var rItem in resizers)
-            {
-                var hideTopBottomResizers = ClientSelection.Width < rItem.IndicatorRegion.Width * 5;
-                if (hideTopBottomResizers
-                    && (rItem.Type == SelectionResizerType.Top
-                    || rItem.Type == SelectionResizerType.Bottom)) continue;
-
-                var hideLeftRightResizers = ClientSelection.Height < rItem.IndicatorRegion.Height * 5;
-                if (hideLeftRightResizers
-                    && (rItem.Type == SelectionResizerType.Left
-                    || rItem.Type == SelectionResizerType.Right)) continue;
-
-                // hover style
-                var resizerRect = rItem.IndicatorRegion;
-                var fillColor = Colors.White.WithAlpha(200);
-                if (rItem.Type == _selection.HoveredResizer?.Type)
-                {
-                    resizerRect.Inflate(DpiScale(1.45f));
-                    fillColor = Core.AccentColor.WithAlpha(200);
-                }
-
-                g.DrawEllipseEx(resizerRect, Colors.White.WithAlpha(50), Colors.Black.WithAlpha(200), 4f);
-                g.DrawEllipseEx(resizerRect, Core.AccentColor.WithAlpha(255), fillColor, 1f);
-
-
-                // draw debug Hit region
-                if (EnableDebug)
-                {
-                    g.DrawRectangleEx(rItem.HitRegion, 0, Colors.Red);
-                }
-            }
+            // Fine 9x9 straightening grid (Photoshop straighten overlay)
+            DrawGrid(g, sel, 9, Colors.White.WithAlpha(115), Colors.Black.WithAlpha(70), 0.7f);
+            // Slightly stronger 3x3 major guides
+            DrawGrid(g, sel, 3, Colors.White.WithAlpha(185), Colors.Black.WithAlpha(90), 0.9f);
+        }
+        else if (_selection.IsLeftButtonPressed || _selection.IsHovered || _selection.HoveredResizer != null)
+        {
+            // Classic 3x3 rule-of-thirds grid
+            DrawGrid(g, sel, 3, Colors.White.WithAlpha(175), Colors.Black.WithAlpha(110), 0.8f);
         }
 
+        // 3. Crisp 1px selection border (dark shadow + clean white edge)
+        g.DrawRectangleEx(sel, 0, Colors.Black.WithAlpha(160), null, 2.0f);
+        g.DrawRectangleEx(sel, 0, Colors.White.WithAlpha(240), null, 1.0f);
 
-        // 3. draw the selection border
-        var borderWidth = (_selection.IsHovered && _selection.IsLeftButtonPressed) ? 0.6f : 0.3f;
-        g.DrawRectangleEx(ClientSelection, 0, Colors.White, null, borderWidth);
-        g.DrawRectangleEx(ClientSelection, 0, Core.AccentColor, null, borderWidth);
+        // 4. Photoshop-style L-shaped corner brackets & edge midpoint bars
+        DrawPhotoshopHandles(g, sel);
 
+        // 5. Curved double-headed rotate arrow when hovering outside any of the 4 corners or actively rotating
+        if ((isHoveringRotate || isRotating) && _selection.PointerMovePoint is { } ptr)
+        {
+            DrawCurvedRotateArrow(g, ptr, sel.Center);
+        }
+
+        // 6. Floating dark pill tooltip (Angle while rotating; W x H while resizing/drawing/moving)
+        if (isRotating)
+        {
+            var angleText = $"Angle: {_selection.Angle:0.0}°";
+            var anchor = _selection.PointerMovePoint is { } p
+                ? new Point(p.X + DpiScale(18f), p.Y + DpiScale(18f))
+                : new Point(sel.Right - DpiScale(90f), sel.Bottom + DpiScale(10f));
+            DrawFloatingPill(g, angleText, anchor);
+        }
+        else if (_selection.IsLeftButtonPressed || _selection.IsHovered || hasRotation)
+        {
+            var sizeText = hasRotation
+                ? $"{(int)Math.Round(_selection.SourceRect.Width)} × {(int)Math.Round(_selection.SourceRect.Height)} px  ({_selection.Angle:0.0}°)"
+                : $"{(int)Math.Round(_selection.SourceRect.Width)} × {(int)Math.Round(_selection.SourceRect.Height)} px";
+            var pillAnchor = new Point(sel.Center.X, sel.Bottom + DpiScale(10f));
+            DrawFloatingPill(g, sizeText, pillAnchor, centerHorizontally: true);
+        }
+    }
+
+
+    /// <summary>
+    /// Draws an N x N grid inside <paramref name="rect"/> with a subtle dark shadow for readability on light charts.
+    /// </summary>
+    private static void DrawGrid(DrawingContext g, Rect rect, int divisions, Color lineColor, Color shadowColor, float width)
+    {
+        var stepX = rect.Width / divisions;
+        var stepY = rect.Height / divisions;
+
+        for (int i = 1; i < divisions; i++)
+        {
+            var x = rect.X + i * stepX;
+            var y = rect.Y + i * stepY;
+
+            g.DrawLineEx(x, rect.Y, x, rect.Bottom, shadowColor, width + 0.8f);
+            g.DrawLineEx(x, rect.Y, x, rect.Bottom, lineColor, width);
+
+            g.DrawLineEx(rect.X, y, rect.Right, y, shadowColor, width + 0.8f);
+            g.DrawLineEx(rect.X, y, rect.Right, y, lineColor, width);
+        }
+    }
+
+
+    /// <summary>
+    /// Draws crisp Photoshop-style L-shaped corner brackets and midpoint edge bars.
+    /// </summary>
+    private void DrawPhotoshopHandles(DrawingContext g, Rect sel)
+    {
+        var arm = Math.Min(DpiScale(16f), Math.Min(sel.Width, sel.Height) / 3.0);
+        var thick = DpiScale(3.2f);
+        var edgeBar = Math.Min(DpiScale(18f), Math.Min(sel.Width, sel.Height) / 3.5);
+        var hovered = _selection.HoveredResizer?.Type;
+
+        Color HandleColor(SelectionResizerType t) =>
+            hovered == t ? Core.AccentColor : Colors.White;
+
+        void DrawBar(Rect r, SelectionResizerType t)
+        {
+            var shadow = r.Inflate(0.8);
+            g.DrawRectangleEx(shadow, 1f, Colors.Transparent, Colors.Black.WithAlpha(185), 0f);
+            g.DrawRectangleEx(r, 0.8f, Colors.Transparent, HandleColor(t), 0f);
+        }
+
+        // Top-Left L bracket
+        DrawBar(new Rect(sel.Left - thick / 2, sel.Top - thick / 2, arm, thick), SelectionResizerType.TopLeft);
+        DrawBar(new Rect(sel.Left - thick / 2, sel.Top - thick / 2, thick, arm), SelectionResizerType.TopLeft);
+
+        // Top-Right L bracket
+        DrawBar(new Rect(sel.Right - arm + thick / 2, sel.Top - thick / 2, arm, thick), SelectionResizerType.TopRight);
+        DrawBar(new Rect(sel.Right - thick / 2, sel.Top - thick / 2, thick, arm), SelectionResizerType.TopRight);
+
+        // Bottom-Left L bracket
+        DrawBar(new Rect(sel.Left - thick / 2, sel.Bottom - thick / 2, arm, thick), SelectionResizerType.BottomLeft);
+        DrawBar(new Rect(sel.Left - thick / 2, sel.Bottom - arm + thick / 2, thick, arm), SelectionResizerType.BottomLeft);
+
+        // Bottom-Right L bracket
+        DrawBar(new Rect(sel.Right - arm + thick / 2, sel.Bottom - thick / 2, arm, thick), SelectionResizerType.BottomRight);
+        DrawBar(new Rect(sel.Right - thick / 2, sel.Bottom - arm + thick / 2, thick, arm), SelectionResizerType.BottomRight);
+
+        // Edge midpoint bars (only when crop box is large enough)
+        if (sel.Width > arm * 3.2)
+        {
+            DrawBar(new Rect(sel.Center.X - edgeBar / 2, sel.Top - thick / 2, edgeBar, thick), SelectionResizerType.Top);
+            DrawBar(new Rect(sel.Center.X - edgeBar / 2, sel.Bottom - thick / 2, edgeBar, thick), SelectionResizerType.Bottom);
+        }
+
+        if (sel.Height > arm * 3.2)
+        {
+            DrawBar(new Rect(sel.Left - thick / 2, sel.Center.Y - edgeBar / 2, thick, edgeBar), SelectionResizerType.Left);
+            DrawBar(new Rect(sel.Right - thick / 2, sel.Center.Y - edgeBar / 2, thick, edgeBar), SelectionResizerType.Right);
+        }
+    }
+
+
+    /// <summary>
+    /// Draws a sleek Photoshop-style curved double-headed rotation arrow near the pointer,
+    /// oriented tangentially to the crop center.
+    /// </summary>
+    private void DrawCurvedRotateArrow(DrawingContext g, Point pointer, Point center)
+    {
+        var radius = DpiScale(11f);
+        var angleRad = Math.Atan2(pointer.Y - center.Y, pointer.X - center.X);
+
+        // Build a curved double-headed arrow arc centered at (0, 0), spanning -48° to +48°
+        var geo = new StreamGeometry();
+        using (var ctx = geo.Open())
+        {
+            var startRad = -0.82;
+            var endRad = 0.82;
+            var pStart = new Point(Math.Cos(startRad) * radius, Math.Sin(startRad) * radius);
+            var pEnd = new Point(Math.Cos(endRad) * radius, Math.Sin(endRad) * radius);
+
+            ctx.BeginFigure(pStart, false);
+            ctx.ArcTo(pEnd, new Size(radius, radius), 0, false, SweepDirection.Clockwise);
+            ctx.EndFigure(false);
+
+            // Top arrowhead at pStart
+            var ah = DpiScale(4.5f);
+            ctx.BeginFigure(new Point(pStart.X - ah * 0.2, pStart.Y - ah * 0.9), false);
+            ctx.LineTo(pStart);
+            ctx.LineTo(new Point(pStart.X + ah * 0.95, pStart.Y + ah * 0.15));
+            ctx.EndFigure(false);
+
+            // Bottom arrowhead at pEnd
+            ctx.BeginFigure(new Point(pEnd.X - ah * 0.2, pEnd.Y + ah * 0.9), false);
+            ctx.LineTo(pEnd);
+            ctx.LineTo(new Point(pEnd.X + ah * 0.95, pEnd.Y - ah * 0.15));
+            ctx.EndFigure(false);
+        }
+
+        // Offset slightly outward from cursor so it never obscures the pointer tip
+        var offsetDist = DpiScale(14f);
+        var drawPos = new Point(
+            pointer.X + Math.Cos(angleRad) * offsetDist,
+            pointer.Y + Math.Sin(angleRad) * offsetDist);
+
+        var transform = Matrix.CreateRotation(angleRad) * Matrix.CreateTranslation(drawPos.X, drawPos.Y);
+        using (g.PushTransform(transform))
+        {
+            g.DrawGeometry(null, new Pen(new SolidColorBrush(Colors.Black.WithAlpha(210)), DpiScale(3.6f), lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round), geo);
+            g.DrawGeometry(null, new Pen(new SolidColorBrush(Colors.White), DpiScale(1.8f), lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round), geo);
+        }
+    }
+
+
+    /// <summary>
+    /// Draws a compact dark floating pill badge (matching Photoshop's live Angle / W×H readout).
+    /// </summary>
+    private void DrawFloatingPill(DrawingContext g, string text, Point anchor, bool centerHorizontally = false)
+    {
+        var fontSize = FontSize * 0.9;
+        var textSize = g.MeasureTextEx(text, FontFamily, fontSize);
+        var padX = DpiScale(8f);
+        var padY = DpiScale(4f);
+        var w = textSize.Width + padX * 2;
+        var h = textSize.Height + padY * 2;
+
+        var x = centerHorizontally ? anchor.X - w / 2 : anchor.X;
+        var y = anchor.Y;
+
+        // Keep pill inside DrawingArea
+        x = Math.Clamp(x, DrawingArea.Left + 6, Math.Max(DrawingArea.Left + 6, DrawingArea.Right - w - 6));
+        if (y + h + 6 > DrawingArea.Bottom)
+        {
+            y = ClientSelection.Bottom - h - DpiScale(10f);
+        }
+        y = Math.Clamp(y, DrawingArea.Top + 6, Math.Max(DrawingArea.Top + 6, DrawingArea.Bottom - h - 6));
+
+        var bgRect = new Rect(x, y, w, h);
+        g.DrawRectangleEx(bgRect, (float)(h / 3.5), Colors.White.WithAlpha(45), Color.FromArgb(215, 24, 24, 28), 1f);
+        g.DrawTextEx(text, FontFamily, fontSize, x + padX, y + padY, Colors.White);
     }
 
 
@@ -642,12 +775,35 @@ public partial class ViewerControl
 
 
     /// <summary>
+    /// Rotates the image behind the upright crop box based on pointer movement around the pivot.
+    /// </summary>
+    private void RotateSelection(Point clientPoint)
+    {
+        if (!EnableSelection || SourceSelection.IsEmpty) return;
+
+        var pivotClient = PointSourceToClient(SelectionRotationPivot);
+        var currentAngle = Math.Atan2(clientPoint.Y - pivotClient.Y, clientPoint.X - pivotClient.X) * 180.0 / Math.PI;
+        var delta = currentAngle - _selection.PointerDownAngle;
+        var newAngle = NormalizeAngle(_selection.AngleBeforeRotated + delta);
+
+        // Gentle snap near 0°, ±90°, ±180° for quick leveling
+        const double snapThreshold = 0.6;
+        foreach (var target in new[] { 0.0, 90.0, -90.0, 180.0, -180.0 })
+        {
+            if (Math.Abs(newAngle - target) <= snapThreshold)
+            {
+                newAngle = target == -180.0 ? 180.0 : target;
+                break;
+            }
+        }
+
+        SetSelectionAngle(Math.Round(newAngle, 1), true);
+    }
+
+
+    /// <summary>
     /// Gets the rectangle between 2 points with aspect ratio.
     /// </summary>
-    /// <param name="point1">The first point</param>
-    /// <param name="point2">The second point</param>
-    /// <param name="aspectRatio">Aspect ratio</param>
-    /// <param name="limitRect">The rectangle to limit the selection</param>
     private static Rect GetRectBetween2Points(Point? point1, Point? point2,
         Size aspectRatio, double srcWidth, double srcHeight, Rect limitRect)
     {
@@ -655,7 +811,6 @@ public partial class ViewerControl
         var fromPoint = point1 ?? new Point();
         var toPoint = point2 ?? new Point();
 
-        // swap fromPoint and toPoint value if toPoint is less than fromPoint
         if (toPoint.X < fromPoint.X)
         {
             var tempX = fromPoint.X;
@@ -677,19 +832,14 @@ public partial class ViewerControl
         selectedArea = selectedArea.WithWidth(width);
         selectedArea = selectedArea.WithHeight(height);
 
-        // limit the selected area to the limitRect
         selectedArea = selectedArea.GetIntersection(limitRect);
 
-
-        // free aspect ratio
         if (aspectRatio.Width <= 0 || aspectRatio.Height <= 0)
             return selectedArea;
-
 
         var wRatio = aspectRatio.Width / aspectRatio.Height;
         var hRatio = aspectRatio.Height / aspectRatio.Width;
 
-        // update selection size according to the ratio
         if (wRatio > hRatio)
         {
             selectedArea = selectedArea.WithHeight(selectedArea.Width / wRatio);
@@ -718,7 +868,7 @@ public partial class ViewerControl
 
 
     /// <summary>
-    /// Moves the current selection to the given location.
+    /// Moves the upright crop frame over the (possibly rotated) image without shifting the image.
     /// </summary>
     private void MoveSelection(Point clientPoint)
     {
@@ -727,35 +877,26 @@ public partial class ViewerControl
         var srcPoint = PointClientToSource(clientPoint);
         var srcMouseDownPoint = PointClientToSource(_selection.PointerDownPoint.Value);
 
-
-        // get the distance the source rect moved
         var dX = srcMouseDownPoint.X - _selection.SourceRectBeforeMoved.X;
         var dY = srcMouseDownPoint.Y - _selection.SourceRectBeforeMoved.Y;
-
-
-        // get the new selection start point
         var newSrcPoint = new Point(srcPoint.X - dX, srcPoint.Y - dY);
 
-
-        // limit the new selection to the image source
-        if (newSrcPoint.X < 0) newSrcPoint = newSrcPoint.WithX(0); // left edge
-        if (newSrcPoint.Y < 0) newSrcPoint = newSrcPoint.WithY(0); // right edge
-
-        // right edge
-        if (newSrcPoint.X + _selection.SourceRectBeforeMoved.Width > BitmapSize.Width)
+        if (Math.Abs(_selection.Angle) < 1e-4)
         {
-            newSrcPoint = newSrcPoint.WithX(BitmapSize.Width - _selection.SourceRectBeforeMoved.Width);
-        }
-        // bottom edge
-        if (newSrcPoint.Y + _selection.SourceRectBeforeMoved.Height > BitmapSize.Height)
-        {
-            newSrcPoint = newSrcPoint.WithY(BitmapSize.Height - _selection.SourceRectBeforeMoved.Height);
+            if (newSrcPoint.X < 0) newSrcPoint = newSrcPoint.WithX(0);
+            if (newSrcPoint.Y < 0) newSrcPoint = newSrcPoint.WithY(0);
+            if (newSrcPoint.X + _selection.SourceRectBeforeMoved.Width > BitmapSize.Width)
+            {
+                newSrcPoint = newSrcPoint.WithX(BitmapSize.Width - _selection.SourceRectBeforeMoved.Width);
+            }
+            if (newSrcPoint.Y + _selection.SourceRectBeforeMoved.Height > BitmapSize.Height)
+            {
+                newSrcPoint = newSrcPoint.WithY(BitmapSize.Height - _selection.SourceRectBeforeMoved.Height);
+            }
         }
 
-
-        // set the final source selection after moved
         var srcRect = new Rect(
-            (int)newSrcPoint.X, (int)newSrcPoint.Y,
+            (int)Math.Round(newSrcPoint.X), (int)Math.Round(newSrcPoint.Y),
             (int)_selection.SourceRectBeforeMoved.Width, (int)_selection.SourceRectBeforeMoved.Height);
 
         SetSourceSelection(srcRect, true);
@@ -763,7 +904,7 @@ public partial class ViewerControl
 
 
     /// <summary>
-    /// Resizes the current selection.
+    /// Resizes the upright crop frame smoothly while keeping the rotated image fixed behind it.
     /// </summary>
     private void ResizeSelection(Point clientPoint, SelectionResizerType direction)
     {
@@ -772,6 +913,7 @@ public partial class ViewerControl
         var srcPoint = PointClientToSource(clientPoint);
         var srcMouseDownPoint = PointClientToSource(_selection.PointerDownPoint.Value);
         var srcSelectionBeforeMoved = _selection.SourceRectBeforeMoved;
+        var hasRotation = Math.Abs(_selection.Angle) >= 1e-4;
         var finalSrcRect = new Rect();
 
         var newX = SourceSelection.X;
@@ -779,75 +921,46 @@ public partial class ViewerControl
         var newWidth = SourceSelection.Width;
         var newHeight = SourceSelection.Height;
 
+        var isTopDirections = direction is SelectionResizerType.Top or SelectionResizerType.TopLeft or SelectionResizerType.TopRight;
+        var isBottomDirections = direction is SelectionResizerType.Bottom or SelectionResizerType.BottomLeft or SelectionResizerType.BottomRight;
+        var isLeftDirections = direction is SelectionResizerType.Left or SelectionResizerType.TopLeft or SelectionResizerType.BottomLeft;
+        var isRightDirections = direction is SelectionResizerType.Right or SelectionResizerType.TopRight or SelectionResizerType.BottomRight;
 
-        #region 1. Get correct size and location of new selection
-
-        var isTopDirections = direction == SelectionResizerType.Top
-            || direction == SelectionResizerType.TopLeft
-            || direction == SelectionResizerType.TopRight;
-
-        var isBottomDirections = direction == SelectionResizerType.Bottom
-            || direction == SelectionResizerType.BottomLeft
-            || direction == SelectionResizerType.BottomRight;
-
-        var isLeftDirections = direction == SelectionResizerType.Left
-            || direction == SelectionResizerType.TopLeft
-            || direction == SelectionResizerType.BottomLeft;
-
-        var isRightDirections = direction == SelectionResizerType.Right
-            || direction == SelectionResizerType.TopRight
-            || direction == SelectionResizerType.BottomRight;
-
-
-        // top resizers
         if (isTopDirections)
         {
             var gapY = srcSelectionBeforeMoved.Y - srcMouseDownPoint.Y;
             var dH = srcPoint.Y - srcSelectionBeforeMoved.Y + gapY;
-
             newY = srcSelectionBeforeMoved.Y + dH;
-            newHeight = Math.Max(0, srcSelectionBeforeMoved.Height - dH);
+            newHeight = Math.Max(1, srcSelectionBeforeMoved.Height - dH);
         }
 
-        // right resizers
         if (isRightDirections)
         {
             var gapX = srcSelectionBeforeMoved.Right - srcMouseDownPoint.X;
             var dW = srcPoint.X - srcSelectionBeforeMoved.Right + gapX;
-
-            newWidth = Math.Max(0, srcSelectionBeforeMoved.Width + dW);
+            newWidth = Math.Max(1, srcSelectionBeforeMoved.Width + dW);
         }
 
-        // bottom resizers
         if (isBottomDirections)
         {
             var gapY = srcSelectionBeforeMoved.Bottom - srcMouseDownPoint.Y;
             var dH = srcPoint.Y - srcSelectionBeforeMoved.Bottom + gapY;
-
-            newHeight = Math.Max(0, srcSelectionBeforeMoved.Height + dH);
+            newHeight = Math.Max(1, srcSelectionBeforeMoved.Height + dH);
         }
 
-        // left resizers
         if (isLeftDirections)
         {
             var gapX = srcSelectionBeforeMoved.X - srcMouseDownPoint.X;
             var dW = srcPoint.X - srcSelectionBeforeMoved.X + gapX;
-
             newX = srcSelectionBeforeMoved.X + dW;
-            newWidth = Math.Max(0, srcSelectionBeforeMoved.Width - dW);
+            newWidth = Math.Max(1, srcSelectionBeforeMoved.Width - dW);
         }
 
+        var newSrcRect = hasRotation
+            ? new Rect(newX, newY, newWidth, newHeight)
+            : new Rect(newX, newY, newWidth, newHeight).GetIntersection(new Rect(0, 0, BitmapSize.Width, BitmapSize.Height));
 
-        // limit the selected client rect to the image source
-        var newSrcRect = new Rect(newX, newY, newWidth, newHeight)
-            .GetIntersection(new Rect(0, 0, BitmapSize.Width, BitmapSize.Height));
-
-        #endregion // 1. Get correct size and location of new selection
-
-
-        #region 2. Handle Aspect ratio
-
-        // update selection size according to the ratio
+        // Aspect ratio constraint
         if (SelectionAspectRatio.Width > 0 && SelectionAspectRatio.Height > 0)
         {
             var wRatio = SelectionAspectRatio.Width / SelectionAspectRatio.Height;
@@ -855,20 +968,13 @@ public partial class ViewerControl
 
             if (wRatio > hRatio)
             {
-                if (direction == SelectionResizerType.Top
-                    || direction == SelectionResizerType.TopRight
-                    || direction == SelectionResizerType.TopLeft
-                    || direction == SelectionResizerType.Bottom
-                    || direction == SelectionResizerType.BottomLeft
-                    || direction == SelectionResizerType.BottomRight)
+                if (isTopDirections || isBottomDirections)
                 {
                     newSrcRect = newSrcRect.WithWidth(newSrcRect.Height / hRatio);
-
-                    if (newSrcRect.Right >= BitmapSize.Width)
+                    if (!hasRotation && newSrcRect.Right >= BitmapSize.Width)
                     {
-                        var maxWidth = BitmapSize.Width - newSrcRect.X; ;
-                        newSrcRect = newSrcRect.WithWidth(maxWidth);
-                        newSrcRect = newSrcRect.WithHeight(maxWidth * hRatio);
+                        var maxWidth = BitmapSize.Width - newSrcRect.X;
+                        newSrcRect = newSrcRect.WithWidth(maxWidth).WithHeight(maxWidth * hRatio);
                     }
                 }
                 else
@@ -876,30 +982,21 @@ public partial class ViewerControl
                     newSrcRect = newSrcRect.WithHeight(newSrcRect.Width / wRatio);
                 }
 
-
-                if (newSrcRect.Bottom >= BitmapSize.Height)
+                if (!hasRotation && newSrcRect.Bottom >= BitmapSize.Height)
                 {
                     var maxHeight = BitmapSize.Height - newSrcRect.Y;
-                    newSrcRect = newSrcRect.WithWidth(maxHeight * wRatio);
-                    newSrcRect = newSrcRect.WithHeight(maxHeight);
+                    newSrcRect = newSrcRect.WithWidth(maxHeight * wRatio).WithHeight(maxHeight);
                 }
             }
             else
             {
-                if (direction == SelectionResizerType.Left
-                    || direction == SelectionResizerType.TopLeft
-                    || direction == SelectionResizerType.BottomLeft
-                    || direction == SelectionResizerType.Right
-                    || direction == SelectionResizerType.TopRight
-                    || direction == SelectionResizerType.BottomRight)
+                if (isLeftDirections || isRightDirections)
                 {
                     newSrcRect = newSrcRect.WithHeight(newSrcRect.Width / wRatio);
-
-                    if (newSrcRect.Bottom >= BitmapSize.Height)
+                    if (!hasRotation && newSrcRect.Bottom >= BitmapSize.Height)
                     {
                         var maxHeight = BitmapSize.Height - newSrcRect.Y;
-                        newSrcRect = newSrcRect.WithWidth(maxHeight * wRatio);
-                        newSrcRect = newSrcRect.WithHeight(maxHeight);
+                        newSrcRect = newSrcRect.WithWidth(maxHeight * wRatio).WithHeight(maxHeight);
                     }
                 }
                 else
@@ -907,106 +1004,57 @@ public partial class ViewerControl
                     newSrcRect = newSrcRect.WithWidth(newSrcRect.Height / hRatio);
                 }
 
-
-                if (newSrcRect.Right >= BitmapSize.Width)
+                if (!hasRotation && newSrcRect.Right >= BitmapSize.Width)
                 {
                     var maxWidth = BitmapSize.Width - newSrcRect.X;
-                    newSrcRect = newSrcRect.WithWidth(maxWidth);
-                    newSrcRect = newSrcRect.WithHeight(maxWidth * hRatio);
+                    newSrcRect = newSrcRect.WithWidth(maxWidth).WithHeight(maxWidth * hRatio);
                 }
             }
         }
 
-        #endregion // 2. Handle Aspect ratio
-
-
-        #region 3. Convert float values to int
-
-        // round the values of location & size
         if (isTopDirections || isLeftDirections)
         {
             finalSrcRect = new Rect(
-                (int)newSrcRect.X, (int)newSrcRect.Y,
+                (int)Math.Floor(newSrcRect.X), (int)Math.Floor(newSrcRect.Y),
                 (int)Math.Ceiling(newSrcRect.Width),
                 (int)Math.Ceiling(newSrcRect.Height));
         }
         else
         {
             finalSrcRect = new Rect(
-                (int)newSrcRect.X, (int)newSrcRect.Y,
+                (int)Math.Round(newSrcRect.X), (int)Math.Round(newSrcRect.Y),
                 (int)Math.Round(newSrcRect.Width),
                 (int)Math.Round(newSrcRect.Height));
         }
 
-        #endregion // 3. Convert float values to int
-
-
-        #region 4. Handle small size (<= 1px)
-
-
-
-        // limit the size to 1 pixel
         if (finalSrcRect.Width <= 1) finalSrcRect = finalSrcRect.WithWidth(1);
         if (finalSrcRect.Height <= 1) finalSrcRect = finalSrcRect.WithHeight(1);
 
-
-        // make sure selection rect is not moved when size <= 1
-
-        // top, top-left, left
-        if (direction == SelectionResizerType.Top
-            || direction == SelectionResizerType.TopLeft
-            || direction == SelectionResizerType.Left)
+        if (direction is SelectionResizerType.Top or SelectionResizerType.TopLeft or SelectionResizerType.Left)
         {
-            if (finalSrcRect.Width <= 1)
-            {
-                finalSrcRect = finalSrcRect.WithX((int)srcSelectionBeforeMoved.Right - 1);
-            }
-            if (finalSrcRect.Height <= 1)
-            {
-                finalSrcRect = finalSrcRect.WithY((int)srcSelectionBeforeMoved.Bottom - 1);
-            }
+            if (finalSrcRect.Width <= 1) finalSrcRect = finalSrcRect.WithX((int)srcSelectionBeforeMoved.Right - 1);
+            if (finalSrcRect.Height <= 1) finalSrcRect = finalSrcRect.WithY((int)srcSelectionBeforeMoved.Bottom - 1);
         }
-
-        // right, bottom-right, bottom
-        else if (direction == SelectionResizerType.Right
-            || direction == SelectionResizerType.BottomRight
-            || direction == SelectionResizerType.Bottom)
+        else if (direction is SelectionResizerType.Right or SelectionResizerType.BottomRight or SelectionResizerType.Bottom)
         {
-            if (finalSrcRect.Width <= 1)
-            {
-                finalSrcRect = finalSrcRect.WithX((int)srcSelectionBeforeMoved.X);
-            }
-            if (finalSrcRect.Height <= 1)
-            {
-                finalSrcRect = finalSrcRect.WithY((int)srcSelectionBeforeMoved.Y);
-            }
+            if (finalSrcRect.Width <= 1) finalSrcRect = finalSrcRect.WithX((int)srcSelectionBeforeMoved.X);
+            if (finalSrcRect.Height <= 1) finalSrcRect = finalSrcRect.WithY((int)srcSelectionBeforeMoved.Y);
         }
-
-        // top-right
         else if (direction == SelectionResizerType.TopRight)
         {
-            if ((finalSrcRect.Width <= 1 && finalSrcRect.Height <= 1)
-                || (finalSrcRect.Width > 1 && finalSrcRect.Height <= 1))
+            if ((finalSrcRect.Width <= 1 && finalSrcRect.Height <= 1) || (finalSrcRect.Width > 1 && finalSrcRect.Height <= 1))
             {
-                finalSrcRect = finalSrcRect.WithX((int)srcSelectionBeforeMoved.Left);
-                finalSrcRect = finalSrcRect.WithY((int)srcSelectionBeforeMoved.Bottom - 1);
+                finalSrcRect = finalSrcRect.WithX((int)srcSelectionBeforeMoved.Left).WithY((int)srcSelectionBeforeMoved.Bottom - 1);
             }
             else if (finalSrcRect.Width <= 1 && finalSrcRect.Height > 1)
             {
                 finalSrcRect = finalSrcRect.WithX((int)srcSelectionBeforeMoved.Left);
             }
         }
-        // bottom-left
         else
         {
-            if (finalSrcRect.Width <= 1)
-            {
-                finalSrcRect = finalSrcRect.WithX((int)srcSelectionBeforeMoved.Right - 1);
-            }
+            if (finalSrcRect.Width <= 1) finalSrcRect = finalSrcRect.WithX((int)srcSelectionBeforeMoved.Right - 1);
         }
-
-        #endregion // 4. Handle small size (<= 1px)
-
 
         SetSourceSelection(finalSrcRect, true);
     }

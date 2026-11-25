@@ -1,4 +1,4 @@
-﻿/*
+/*
 ImageGlass - A Fast, Seamless Photo Viewer
 Copyright (C) 2010 - 2027 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
@@ -21,7 +21,7 @@ namespace ImageGlass.UI.Viewer;
 
 /// <summary>
 /// Defines different types of selection resizers for a user interface.
-/// Each value represents a specific corner or edge of a selection area.
+/// Each value represents a specific corner, edge, or rotation handle of a selection area.
 /// </summary>
 public enum SelectionResizerType
 {
@@ -33,6 +33,7 @@ public enum SelectionResizerType
     Bottom = 1 << 5,
     BottomLeft = 1 << 6,
     Left = 1 << 7,
+    Rotate = 1 << 8,
 }
 
 
@@ -50,6 +51,13 @@ public enum SelectionAction
     /// </summary>
     Resizing,
 
-    // User is moving the selection.
+    /// <summary>
+    /// User is moving the selection.
+    /// </summary>
     Moving,
+
+    /// <summary>
+    /// User is rotating the selection.
+    /// </summary>
+    Rotating,
 }

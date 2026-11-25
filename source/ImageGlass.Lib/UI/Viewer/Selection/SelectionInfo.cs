@@ -1,4 +1,4 @@
-﻿/*
+/*
 ImageGlass - A Fast, Seamless Photo Viewer
 Copyright (C) 2010 - 2027 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
@@ -33,17 +33,40 @@ internal class SelectionInfo
 
 
     /// <summary>
-    /// Represents the rectangular area of a source image.
-    /// It defines the portion of the image to be used.
+    /// Represents the rectangular area of a source image (in rotated-view source coordinates).
     /// </summary>
     public Rect SourceRect { get; set; } = default;
 
 
     /// <summary>
-    /// Represents the rectangle area before a move operation.
-    /// It is used to track the original position and size of an object.
+    /// Represents the rectangle area before a move or resize operation.
     /// </summary>
     public Rect SourceRectBeforeMoved { get; set; } = default;
+
+
+    /// <summary>
+    /// Gets or sets the clockwise rotation angle of the image behind the upright crop frame in degrees [-180, 180].
+    /// </summary>
+    public double Angle { get; set; } = 0;
+
+
+    /// <summary>
+    /// Fixed pivot point (in source image pixels) around which the image rotates while cropping,
+    /// so resizing or moving the upright crop frame never shifts the rotated image.
+    /// </summary>
+    public Point? RotationPivotSource { get; set; } = null;
+
+
+    /// <summary>
+    /// Stores the selection angle at the start of a rotation drag.
+    /// </summary>
+    public double AngleBeforeRotated { get; set; } = 0;
+
+
+    /// <summary>
+    /// Stores the pointer polar angle (degrees) relative to the pivot when rotation drag begins.
+    /// </summary>
+    public double PointerDownAngle { get; set; } = 0;
 
 
     /// <summary>

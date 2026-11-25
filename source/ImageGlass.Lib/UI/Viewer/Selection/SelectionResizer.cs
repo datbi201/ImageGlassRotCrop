@@ -1,4 +1,4 @@
-﻿/*
+/*
 ImageGlass - A Fast, Seamless Photo Viewer
 Copyright (C) 2010 - 2027 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
@@ -60,10 +60,10 @@ public class SelectionResizer(SelectionResizerType position, Rect indicatorRegio
             SelectionResizerType.Bottom => new Cursor(StandardCursorType.SizeNorthSouth),
             SelectionResizerType.BottomLeft => new Cursor(StandardCursorType.BottomLeftCorner),
             SelectionResizerType.Left => new Cursor(StandardCursorType.SizeWestEast),
+            SelectionResizerType.Rotate => new Cursor(StandardCursorType.Hand),
             _ => Cursor.Default,
         };
     }
 
 
 }
-

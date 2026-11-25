@@ -120,6 +120,8 @@ public partial class ViewerControl
                 IsColorInverted = showsEdits && IsColorInverted,
                 Channels = showsEdits ? _loadingOptions.Channels : ColorChannels.RGBA,
                 SelectionRect = SourceSelection,
+                SelectionAngle = SelectionAngle,
+                SelectionPivot = SelectionRotationPivot,
                 VisibleRect = SrcRect,
                 IsPreview = _isPreviewing,
                 HdrToneMapping = EnableHdrRendering && photo.Metadata?.IsHdr == true ? toneMapping with { } : null,
