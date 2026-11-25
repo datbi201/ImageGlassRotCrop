@@ -1,4 +1,4 @@
-﻿/*
+/*
 ImageGlass - A Fast, Seamless Photo Viewer
 Copyright (C) 2010 - 2027 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
@@ -40,10 +40,28 @@ internal class SelectionInfo
 
 
     /// <summary>
-    /// Represents the rectangle area before a move operation.
+    /// Represents the rectangle area before a move or resize operation.
     /// It is used to track the original position and size of an object.
     /// </summary>
     public Rect SourceRectBeforeMoved { get; set; } = default;
+
+
+    /// <summary>
+    /// Gets or sets the clockwise rotation angle of the selection frame in degrees [-180, 180].
+    /// </summary>
+    public double Angle { get; set; } = 0;
+
+
+    /// <summary>
+    /// Stores the selection angle at the start of a rotation drag.
+    /// </summary>
+    public double AngleBeforeRotated { get; set; } = 0;
+
+
+    /// <summary>
+    /// Stores the pointer polar angle (degrees) relative to the selection center when rotation drag begins.
+    /// </summary>
+    public double PointerDownAngle { get; set; } = 0;
 
 
     /// <summary>

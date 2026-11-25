@@ -88,6 +88,11 @@ public sealed class ViewerImageState : IDisposable
     public Rect SelectionRect { get; init; }
 
     /// <summary>
+    /// Gets the clockwise rotation angle of <see cref="SelectionRect"/> in degrees.
+    /// </summary>
+    public double SelectionAngle { get; init; }
+
+    /// <summary>
     /// Gets the part of <see cref="Image"/> visible in the viewer, in its pixels.
     /// </summary>
     public Rect VisibleRect { get; init; }
@@ -144,11 +149,24 @@ public sealed class ViewerImageState : IDisposable
 
     /// <summary>
     /// Copies the pixels of a region into a new bitmap the caller owns; safe on any thread.
+    /// When <paramref name="region"/> is <see cref="ViewerImageRegion.Selection"/> and
+    /// <see cref="SelectionAngle"/> is non-zero, performs an affine rotated crop using high-quality Catmull-Rom resampling.
     /// </summary>
     public SKBitmap? CopyPixels(ViewerImageRegion region = ViewerImageRegion.WholeImage)
     {
         var img = Image;
         if (img.IsDisposed()) return null;
+
+        // Rotated selection crop path
+        if (region == ViewerImageRegion.Selection && Math.Abs(SelectionAngle) >= 1e-4)
+        {
+            var sel = SelectionRect.Normalize();
+            var outW = (int)Math.Round(sel.Width);
+            var outH = (int)Math.Round(sel.Height);
+            if (outW <= 0 || outH <= 0) return null;
+
+            return CopyRotatedSelectionPixels(img, sel, outW, outH, SelectionAngle);
+        }
 
         var rect = GetRegionRect(region);
         if (rect.IsEmpty) return null;
@@ -160,6 +178,52 @@ public sealed class ViewerImageState : IDisposable
         {
             bmp.Dispose();
             return null;
+        }
+
+        return bmp;
+    }
+
+
+    /// <summary>
+    /// Renders the rotated selection box from <paramref name="img"/> into an upright bitmap of size
+    /// <paramref name="outW"/> x <paramref name="outH"/>.
+    /// </summary>
+    private static SKBitmap? CopyRotatedSelectionPixels(SKImage img, Rect sel, int outW, int outH, double angleDegrees)
+    {
+        var alphaType = img.AlphaType == SKAlphaType.Opaque ? SKAlphaType.Premul : img.AlphaType;
+        var info = new SKImageInfo(outW, outH, img.ColorType, alphaType, img.ColorSpace);
+        var bmp = new SKBitmap(info);
+
+        var surface = SKSurface.Create(info, bmp.GetPixels(), bmp.RowBytes);
+        if (surface is null)
+        {
+            // Fallback for color types that cannot be used directly as a Skia render target
+            bmp.Dispose();
+            info = new SKImageInfo(outW, outH, SKColorType.Rgba8888, SKAlphaType.Premul, img.ColorSpace);
+            bmp = new SKBitmap(info);
+            surface = SKSurface.Create(info, bmp.GetPixels(), bmp.RowBytes);
+            if (surface is null)
+            {
+                bmp.Dispose();
+                return null;
+            }
+        }
+
+        using (surface)
+        {
+            var canvas = surface.Canvas;
+            canvas.Clear(SKColors.Transparent);
+
+            var centerX = (float)(sel.X + sel.Width / 2.0);
+            var centerY = (float)(sel.Y + sel.Height / 2.0);
+
+            canvas.Translate(outW / 2f, outH / 2f);
+            canvas.RotateDegrees((float)-angleDegrees);
+            canvas.Translate(-centerX, -centerY);
+
+            var sampling = new SKSamplingOptions(SKCubicResampler.CatmullRom);
+            canvas.DrawImage(img, 0, 0, sampling);
+            canvas.Flush();
         }
 
         return bmp;

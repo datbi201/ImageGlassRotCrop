@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -38,7 +39,7 @@ namespace ImageGlass.Tools;
 
 public partial class CropImageToolControl : PhControl, IToolControl
 {
-    // prevents dead-loop when updating NumericUpDown values from SelectionChanged
+    // prevents dead-loop when updating NumericUpDown / Slider values from SelectionChanged
     private bool _isUpdatingSelectionUI;
     private Rect _lastSelectionArea;
 
@@ -79,6 +80,7 @@ public partial class CropImageToolControl : PhControl, IToolControl
         PART_BtnCrop.Click += PART_BtnCrop_Click;
         PART_BtnCopy.Click += PART_BtnCopy_Click;
         PART_BtnPrint.Click += PART_BtnPrint_Click;
+        PART_BtnResetAngle.Click += PART_BtnResetAngle_Click;
         PART_BtnPrint.IsVisible = !FeatureManager.IsLocked(API.IG_Print);
 
         // subscribe to aspect ratio change
@@ -89,6 +91,10 @@ public partial class CropImageToolControl : PhControl, IToolControl
         PART_NumY.ValueChanged += NumSelection_ValueChanged;
         PART_NumWidth.ValueChanged += NumSelection_ValueChanged;
         PART_NumHeight.ValueChanged += NumSelection_ValueChanged;
+
+        // subscribe to rotation angle controls
+        PART_SldAngle.ValueChanged += SldAngle_ValueChanged;
+        PART_NumAngle.ValueChanged += NumAngle_ValueChanged;
 
         // subscribe to custom ratio value changes
         PART_NumRatioFrom.ValueChanged += NumRatio_ValueChanged;
@@ -102,6 +108,8 @@ public partial class CropImageToolControl : PhControl, IToolControl
         PART_NumRatioFrom.Value = Options.AspectRatioValues[0];
         PART_NumRatioTo.Value = Options.AspectRatioValues[1];
         PART_CmdAspectRatio.SelectedIndex = (int)Options.AspectRatio;
+        PART_SldAngle.Value = 0;
+        PART_NumAngle.Value = 0;
         _isUpdatingSelectionUI = false;
 
         // apply aspect ratio and load default selection
@@ -122,6 +130,7 @@ public partial class CropImageToolControl : PhControl, IToolControl
         PART_BtnCrop.Click -= PART_BtnCrop_Click;
         PART_BtnCopy.Click -= PART_BtnCopy_Click;
         PART_BtnPrint.Click -= PART_BtnPrint_Click;
+        PART_BtnResetAngle.Click -= PART_BtnResetAngle_Click;
 
         PART_CmdAspectRatio.SelectionChanged -= PART_CmdAspectRatio_SelectionChanged;
 
@@ -130,12 +139,16 @@ public partial class CropImageToolControl : PhControl, IToolControl
         PART_NumWidth.ValueChanged -= NumSelection_ValueChanged;
         PART_NumHeight.ValueChanged -= NumSelection_ValueChanged;
 
+        PART_SldAngle.ValueChanged -= SldAngle_ValueChanged;
+        PART_NumAngle.ValueChanged -= NumAngle_ValueChanged;
+
         PART_NumRatioFrom.ValueChanged -= NumRatio_ValueChanged;
         PART_NumRatioTo.ValueChanged -= NumRatio_ValueChanged;
 
         Viewer.PhotoLoading -= Viewer_PhotoLoading;
 
-        // reset selection and disable selection mode
+        // reset selection, angle and disable selection mode
+        Viewer.SetSelectionAngle(0, false);
         Viewer.SourceSelection = default;
         Viewer.EnableSelection = false;
 
@@ -165,7 +178,7 @@ public partial class CropImageToolControl : PhControl, IToolControl
         // track the latest selection for UseTheLastSelection mode.
         _lastSelectionArea = e.SourceSelection;
 
-        UpdateSelectionUI(e.SourceSelection);
+        UpdateSelectionUI(e.SourceSelection, e.SelectionAngle);
     }
 
 
@@ -200,6 +213,7 @@ public partial class CropImageToolControl : PhControl, IToolControl
         // restore default selection when the new photo is fully loaded
         Dispatcher.UIThread.Post(() =>
         {
+            Viewer.SetSelectionAngle(0, false);
             UpdateAspectRatioValues();
             LoadDefaultSelection();
         });
@@ -215,17 +229,44 @@ public partial class CropImageToolControl : PhControl, IToolControl
     }
 
 
+    private void SldAngle_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (_isUpdatingSelectionUI) return;
+
+        var angle = Math.Round(e.NewValue, 1);
+        ApplyAngleFromUI(angle);
+    }
+
+
+    private void NumAngle_ValueChanged(object? sender, NumericUpDownValueChangedEventArgs e)
+    {
+        if (_isUpdatingSelectionUI) return;
+
+        var angle = Math.Round((double)(e.NewValue ?? 0m), 1);
+        ApplyAngleFromUI(angle);
+    }
+
+
+    private void PART_BtnResetAngle_Click(object? sender, RoutedEventArgs e)
+    {
+        ApplyAngleFromUI(0);
+    }
+
+
     private void NumericUpDown_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter)
         {
             LoadSelectionFromInputs();
+            var angle = Math.Round((double)(PART_NumAngle.Value ?? 0m), 1);
+            ApplyAngleFromUI(angle);
         }
     }
 
 
     private void PART_BtnReset_Click(object? sender, RoutedEventArgs e)
     {
+        Viewer.SetSelectionAngle(0, false);
         Viewer.SourceSelection = default;
         Viewer.Refresh(false);
     }
@@ -565,9 +606,9 @@ public partial class CropImageToolControl : PhControl, IToolControl
 
 
     /// <summary>
-    /// Updates the selection UI fields from the given selection rect.
+    /// Updates the selection UI fields from the given selection rect and rotation angle.
     /// </summary>
-    private void UpdateSelectionUI(Rect selection)
+    private void UpdateSelectionUI(Rect selection, double angle)
     {
         _isUpdatingSelectionUI = true;
         try
@@ -577,11 +618,41 @@ public partial class CropImageToolControl : PhControl, IToolControl
             PART_NumWidth.Value = (decimal)selection.Width;
             PART_NumHeight.Value = (decimal)selection.Height;
 
+            var clampedAngle = Math.Clamp(angle, -180.0, 180.0);
+            PART_SldAngle.Value = clampedAngle;
+            PART_NumAngle.Value = (decimal)Math.Round(clampedAngle, 1);
+
             UpdateActionButtonStates(selection.Width > 0 && selection.Height > 0);
         }
         finally
         {
             _isUpdatingSelectionUI = false;
+        }
+    }
+
+
+    /// <summary>
+    /// Applies a rotation angle entered from the angle slider, numeric box, or reset button.
+    /// </summary>
+    private void ApplyAngleFromUI(double angle)
+    {
+        var clamped = Math.Clamp(angle, -180.0, 180.0);
+
+        _isUpdatingSelectionUI = true;
+        try
+        {
+            PART_SldAngle.Value = clamped;
+            PART_NumAngle.Value = (decimal)Math.Round(clamped, 1);
+        }
+        finally
+        {
+            _isUpdatingSelectionUI = false;
+        }
+
+        if (Math.Abs(Viewer.SelectionAngle - clamped) >= 1e-4)
+        {
+            Viewer.SelectionAngle = clamped;
+            Viewer.Refresh(false);
         }
     }
 
@@ -596,6 +667,9 @@ public partial class CropImageToolControl : PhControl, IToolControl
         PART_BtnCrop.IsEnabled = hasSelection;
         PART_BtnCopy.IsEnabled = hasSelection;
         PART_BtnPrint.IsEnabled = hasSelection;
+        PART_SldAngle.IsEnabled = hasSelection;
+        PART_NumAngle.IsEnabled = hasSelection;
+        PART_BtnResetAngle.IsEnabled = hasSelection;
     }
 
 
@@ -611,7 +685,8 @@ public partial class CropImageToolControl : PhControl, IToolControl
         var h = (double)(PART_NumHeight.Value ?? 0);
 
         // don't update selection with invalid values
-        if (x < 0 || y < 0 || w < 0 || h < 0) return;
+        if (w < 0 || h < 0) return;
+        if (Math.Abs(Viewer.SelectionAngle) < 1e-4 && (x < 0 || y < 0)) return;
 
         var newRect = new Rect(x, y, w, h);
 

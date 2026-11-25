@@ -58,7 +58,7 @@
         </StackPanel>
 
 
-        <!--  Selection rectangle  -->
+        <!--  Selection rectangle & rotation  -->
         <WrapPanel
             ItemSpacing="24"
             LineSpacing="8"
@@ -109,6 +109,45 @@
                     Minimum="0"
                     ParsingNumberStyle="Integer"
                     ShowButtonSpinner="False" />
+            </StackPanel>
+
+            <!--  Rotation angle  -->
+            <StackPanel
+                HorizontalAlignment="Center"
+                Orientation="Horizontal"
+                Spacing="6">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Opacity="0.6"
+                    Text="Angle (°)" />
+
+                <Slider
+                    x:Name="PART_SldAngle"
+                    Width="110"
+                    VerticalAlignment="Center"
+                    IsSnapToTickEnabled="False"
+                    Maximum="180"
+                    Minimum="-180"
+                    TickFrequency="1"
+                    Value="0" />
+
+                <NumericUpDown
+                    x:Name="PART_NumAngle"
+                    Width="86"
+                    FormatString="0.0"
+                    Increment="0.5"
+                    KeyDown="NumericUpDown_KeyDown"
+                    Maximum="180"
+                    Minimum="-180"
+                    ShowButtonSpinner="True"
+                    Value="0" />
+
+                <Button
+                    x:Name="PART_BtnResetAngle"
+                    VerticalAlignment="Center"
+                    Content="0°"
+                    Padding="8,4"
+                    ToolTip.Tip="Reset rotation angle to 0°" />
             </StackPanel>
         </WrapPanel>
 

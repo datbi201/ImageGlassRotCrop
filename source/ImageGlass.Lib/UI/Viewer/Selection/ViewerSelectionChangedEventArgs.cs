@@ -1,4 +1,4 @@
-﻿/*
+/*
 ImageGlass - A Fast, Seamless Photo Viewer
 Copyright (C) 2010 - 2027 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
@@ -26,7 +26,7 @@ namespace ImageGlass.UI.Viewer;
 /// <summary>
 /// Selection event arguments
 /// </summary>
-public class ViewerSelectionChangedEventArgs(Rect clientSelection, Rect sourceSelection) : EventArgs
+public class ViewerSelectionChangedEventArgs(Rect clientSelection, Rect sourceSelection, double selectionAngle = 0) : EventArgs
 {
 
     /// <summary>
@@ -40,5 +40,10 @@ public class ViewerSelectionChangedEventArgs(Rect clientSelection, Rect sourceSe
     /// </summary>
     public Rect SourceSelection => sourceSelection;
 
-}
 
+    /// <summary>
+    /// Gets the clockwise rotation angle of the selection area in degrees.
+    /// </summary>
+    public double SelectionAngle => selectionAngle;
+
+}
